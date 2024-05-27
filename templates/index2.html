@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Registro de Entrada de Vehículos</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+    <script>
+        function mostrarVehiculosRegistrados() {
+            fetch('/api/obtener-entradas')
+                .then(response => response.json())
+                .then(data => {
+                    const listaVehiculos = document.getElementById('listaVehiculos');
+                    listaVehiculos.innerHTML = '';
+                    data.forEach(entrada => {
+                        const card = document.createElement('div');
+                        card.className = 'card m-2'; // Añadir margen entre las cartas
+                        card.style.width = '18rem';
+
+                        const image = document.createElement('img');
+                        image.src = entrada.firebase_url;
+                        image.className = 'card-img-top';
+                        image.alt = 'Imagen de Vehículo';
+                        image.style.height = '180px';
+
+                        const cardBody = document.createElement('div');
+                        cardBody.className = 'card-body';
+
+                        let contenido = `<p class="card-text"><strong>Placa:</strong> ${entrada.placa}<br>`;
+                        contenido += `<strong>Hora de Entrada:</strong> ${new Date(entrada.hora_entrada).toLocaleString()}<br>`;
+                        if ('time_spent' in entrada) {
+                            contenido += `<strong>Tiempo en Estacionamiento:</strong> ${entrada.time_spent.toFixed(2)} minutos<br>`;
+                        }
+                        if ('tarifa' in entrada) {
+                            contenido += `<strong>Tarifa:</strong> ${entrada.tarifa.toFixed(2)} COP<br>`;
+                        }
+                        if (entrada.editado) {
+                            contenido += '<span style="color: red;">Esta placa ha sido editada</span><br>';
+                        }
+                        contenido += '</p>';
+                        cardBody.innerHTML = contenido;
+
+                        const botonEditar = document.createElement('button');
+                        botonEditar.className = 'btn btn-warning';
+                        botonEditar.textContent = 'Editar Placa';
+                        botonEditar.onclick = () => abrirModalEditar(entrada.placa, entrada.firebase_url);
+
+                        const botonCalcularTarifa = document.createElement('button');
+                        botonCalcularTarifa.className = 'btn btn-info ms-2';
+                        botonCalcularTarifa.textContent = 'Calcular Tarifa';
+                        botonCalcularTarifa.onclick = () => calcularTarifaIndividual(entrada.placa, entrada.hora_entrada);
+
+                        card.appendChild(image);
+                        card.appendChild(cardBody);
+                        cardBody.appendChild(botonEditar);
+                        cardBody.appendChild(botonCalcularTarifa);
+
+                        listaVehiculos.appendChild(card);
+                    });
+                })
+                .catch(error => mostrarAlerta('Error al obtener las entradas: ' + error, 'danger'));
+        }
+
+        function buscarPlaca() {
+            const inputSearch = document.querySelector('.form-control').value.toLowerCase();
+            const listaVehiculos = document.getElementById('listaVehiculos').children;
+            let encontrado = false;
+
+            for (let item of listaVehiculos) {
+                if (item.textContent.toLowerCase().includes(inputSearch)) {
+                    const placa = item.textContent.match(/Placa: ([A-Z0-9-]+)/i)[1];
+                    abrirModalEditar(placa);
+                    encontrado = true;
+                    break;
+                }
+            }
+
+            if (!encontrado) {
+                mostrarAlerta('Placa no encontrada', 'warning');
+            }
+        }
+
+        function abrirModalEditar(placaOriginal, imageUrl) {
+            const inputPlacaOriginal = document.getElementById('placaOriginal');
+            const inputNuevaPlaca = document.getElementById('nuevaPlaca');
+            const imagenCarro = document.getElementById('imagenCarro');
+
+            inputPlacaOriginal.value = placaOriginal;
+            inputNuevaPlaca.value = '';
+            imagenCarro.src = imageUrl;
+
+            const editarPlacaModal = new bootstrap.Modal(document.getElementById('editarPlacaModal'));
+            editarPlacaModal.show();
+        }
+
+        function actualizarPlaca() {
+            const placaOriginal = document.getElementById('placaOriginal').value;
+            const nuevaPlaca = document.getElementById('nuevaPlaca').value;
+
+            fetch('/api/actualizarplaca', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    placa_original: placaOriginal,
+                    nueva_placa: nuevaPlaca
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                mostrarAlerta(data.message, 'success');
+                $('#editarPlacaModal').modal('hide');
+                mostrarVehiculosRegistrados();
+            })
+            .catch(error => mostrarAlerta('Error: ' + error, 'danger'));
+        }
+
+        function calcularTarifaIndividual(placa, horaEntrada) {
+            fetch('/api/calcular-tarifa', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    placa: placa,
+                    hora_entrada: horaEntrada
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    mostrarAlerta(`La tarifa para la placa ${placa} es de ${data.tarifa} COP.`, 'success');
+                } else {
+                    mostrarAlerta(`Error al calcular la tarifa: ${data.error}`, 'danger');
+                }
+            })
+            .catch(error => mostrarAlerta('Error: ' + error, 'danger'));
+        }
+
+        function mostrarAlerta(mensaje, tipo) {
+            const alertPlaceholder = document.getElementById('alertPlaceholder');
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${tipo} alert-dismissible fade show`;
+            alertDiv.role = 'alert';
+            alertDiv.innerHTML = `
+                ${mensaje}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            alertPlaceholder.appendChild(alertDiv);
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        function actualizarTotalIngresos() {
+            fetch('/api/total-ingresos-dia')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('totalIngresosDia').textContent = data.total_ingresos.toFixed(2);
+                })
+                .catch(error => mostrarAlerta('Error al obtener el total de ingresos: ' + error, 'danger'));
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            mostrarVehiculosRegistrados();
+            actualizarTotalIngresos();
+            setInterval(mostrarVehiculosRegistrados, 1000);
+            setInterval(actualizarTotalIngresos, 1000);
+        });
+    </script>
+</head>
+<style>
+    .navbar-nav-center {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+    
+    .container-fluid {
+        display: flex; 
+        justify-content: center;
+        width: 100%;
+    }
+    .center-button {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 80vh;
+        margin-top: auto;
+    }
+</style>
+<body>
+    <div class="container text-center my-4">
+        <h2>Total Ingresos del Día: <span id="totalIngresosDia">0</span> COP</h2>
+    </div>
+    <div class="navbar">
+        <nav class="navbar navbar-expand-lg bg-body-tertiary">
+            <div class="container-fluid d-flex justify-content-center">
+                <div class="navbar-nav-center">
+                    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarTogglerDemo03" aria-controls="navbarTogglerDemo03" aria-expanded="false" aria-label="Toggle navigation">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                    <div class="collapse navbar-collapse" id="navbarTogglerDemo03">
+                        <form class="d-flex" role="Buscar" onsubmit="event.preventDefault(); buscarPlaca();">
+                            <input class="form-control me-2" type="search" placeholder="Buscar carros" aria-label="Search">
+                            <button class="btn btn-outline-success" type="submit">Buscar</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </div>
+    
+    <h1 class="text-center mb-4 text-warning">
+        <strong>
+            Entrada de Vehículos
+        </strong>
+    </h1>
+    <div id="alertPlaceholder"></div>
+    <div class="d-flex flex-wrap mt-4" id="listaVehiculos">
+        <!-- Las cartas de vehículos se insertarán aquí -->
+    </div>
+    <div class="center-button">
+    </div>
+    <div class="modal fade" id="editarPlacaModal" tabindex="-1" aria-labelledby="editarPlacaModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editarPlacaModalLabel">Editar Placa</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="text" id="placaOriginal" class="form-control mb-2" readonly required>
+                    <img id="imagenCarro" src="" class="img-fluid mb-3" alt="Imagen del Carro">
+                    <input type="text" id="nuevaPlaca" class="form-control" placeholder="Nueva Placa" required>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="actualizarPlaca()">Guardar Cambios</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="alertPlaceholder"></div>
+</body>
+</html>
