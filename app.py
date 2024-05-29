@@ -10,7 +10,7 @@ import firebase_admin
 from firebase_admin import credentials, storage, firestore
 import uuid
 from deeplearling import object_detection
-from whatsapp_api_client_python import API
+# from whatsapp_api_client_python import API
 import json
 import google.api_core.exceptions
 
@@ -28,7 +28,7 @@ app.logger.setLevel(logging.DEBUG)
 
 texts_by_filename = {}
 entradas = {}
-last_request_time = None  # Variable global para almacenar el timestamp de la última solicitud
+last_request_time = None  
 
 MAX_REPEAT_COUNT = 2
 
@@ -251,7 +251,7 @@ def actualizar_placa():
     try:
         data = request.get_json()
         app.logger.debug(f"Datos recibidos: {data}")
-        entry_id = data.get('id')  # Usa get para evitar KeyError si no está presente
+        entry_id = data.get('id') 
         nueva_placa = data.get('nueva_placa')
 
         if not entry_id:
@@ -399,15 +399,15 @@ def finalizar(placa):
     else:
         return redirect(url_for('index'))
 
-@app.route('/whatsapp/webhook', methods=['POST'])
-def whatsapp_webhook():
-    if request.method == 'POST':
-        data = request.get_json()
-        print("entro con " + json.dumps(data))
-        procesar_mensaje(data)
-        return jsonify({"status": "success"}), 200
-    else:
-        return jsonify({"status": "error"}), 400
+# @app.route('/whatsapp/webhook', methods=['POST'])
+# def whatsapp_webhook():
+#     if request.method == 'POST':
+#         data = request.get_json()
+#         print("entro con " + json.dumps(data))
+#         procesar_mensaje(data)
+#         return jsonify({"status": "success"}), 200
+#     else:
+#         return jsonify({"status": "error"}), 400
 
 @app.route('/api/total-ingresos-dia', methods=['GET'])
 def total_ingresos_dia():
@@ -479,30 +479,30 @@ def buscar_placa():
         return jsonify({'error': 'Error interno del servidor', 'message': str(e)}), 500
 
 
-def procesar_mensaje(data):
-    try:
-        message_data = data['messageData']
-        if message_data['typeMessage'] == 'textMessage':
-            message = message_data['textMessageData']['textMessage']
-            sender = data['senderData']['chatId']
-        elif message_data['typeMessage'] == 'extendedTextMessage':
-            message = message_data['extendedTextMessageData']['text']
-            sender = data['senderData']['chatId']
-        else:
-            raise KeyError("Tipo de mensaje no soportado")
+# def procesar_mensaje(data):
+#     try:
+#         message_data = data['messageData']
+#         if message_data['typeMessage'] == 'textMessage':
+#             message = message_data['textMessageData']['textMessage']
+#             sender = data['senderData']['chatId']
+#         elif message_data['typeMessage'] == 'extendedTextMessage':
+#             message = message_data['extendedTextMessageData']['text']
+#             sender = data['senderData']['chatId']
+#         else:
+#             raise KeyError("Tipo de mensaje no soportado")
 
-        whatsapp = API.GreenAPI('7103931186', 'deae7727f47b4592aff2780288b5b5e9c948008aa0594bcd90')
+#         whatsapp = API.GreenAPI('7103931186', 'deae7727f47b4592aff2780288b5b5e9c948008aa0594bcd90')
 
-        if message.lower() == 'entrando parqueadero' or message.lower() == 'iniciar':
-            ultima_placa_info = obtener_ultima_placa().get_json()  
-            if 'error' not in ultima_placa_info:
-                mensaje_respuesta = f"*Muchas gracias por tu ingreso a nuestro parqueadero🚗*. Esta es tu placa: *{ultima_placa_info['placa']}*\nHora de Entrada: *{ultima_placa_info['hora_entrada']}*\nesta es la imgen de tu vehiculo 🚗: {ultima_placa_info['firebase_url']}\n"
-                whatsapp.sending.sendMessage(sender, mensaje_respuesta)
-            else:
-                whatsapp.sending.sendMessage(sender, "Lo sentimos, no hay registros de placas recientes.")
+#         if message.lower() == 'entrando parqueadero' or message.lower() == 'iniciar':
+#             ultima_placa_info = obtener_ultima_placa().get_json()  
+#             if 'error' not in ultima_placa_info:
+#                 mensaje_respuesta = f"*Muchas gracias por tu ingreso a nuestro parqueadero🚗*. Esta es tu placa: *{ultima_placa_info['placa']}*\nHora de Entrada: *{ultima_placa_info['hora_entrada']}*\nesta es la imgen de tu vehiculo 🚗: {ultima_placa_info['firebase_url']}\n"
+#                 whatsapp.sending.sendMessage(sender, mensaje_respuesta)
+#             else:
+#                 whatsapp.sending.sendMessage(sender, "Lo sentimos, no hay registros de placas recientes.")
 
-    except KeyError as e:
-        print(f"Error: {str(e)}")
+#     except KeyError as e:
+#         print(f"Error: {str(e)}")
 
 if __name__ == '__main__':
     app.run()
