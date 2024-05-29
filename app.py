@@ -1,15 +1,19 @@
 import os
 import datetime
 import logging
-from flask import Flask, request, jsonify, send_from_directory, render_template, redirect, url_for
+import time
+import numpy as np
+import cv2
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 from werkzeug.utils import secure_filename
 import firebase_admin
 from firebase_admin import credentials, storage, firestore
 import uuid
-from deeplearning import object_detection
+from deeplearling import object_detection
 from whatsapp_api_client_python import API
 import json
-import google.api_core.exceptions  
+import google.api_core.exceptions
+
 
 cred = credentials.Certificate('./ia-car-plates-firebase-adminsdk-61xhu-df58abe964.json')
 firebase_admin.initialize_app(cred, {
@@ -22,18 +26,9 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
 app.logger.setLevel(logging.DEBUG)
 
-BASE_PATH = os.getcwd()
-UPLOAD_PATH = os.path.join(BASE_PATH, 'static/upload/')
-PREDICT_PATH = os.path.join(BASE_PATH, 'static/predict/')
 texts_by_filename = {}
 entradas = {}
-
-def upload_file_to_firebase(filename):
-    bucket = storage.bucket()
-    blob = bucket.blob('upload/' + filename)
-    blob.upload_from_filename(filename)
-    blob.make_public()
-    return blob.public_url
+last_request_time = None  # Variable global para almacenar el timestamp de la última solicitud
 
 MAX_REPEAT_COUNT = 2
 
@@ -47,7 +42,7 @@ def calcular_tarifa_endpoint():
     try:
         data = request.get_json()
         app.logger.debug(f"Datos recibidos: {data}")
-        entry_id = data['id']  # Asegúrate de que el ID se está recibiendo aquí
+        entry_id = data['id']
         doc_ref = db.collection('entries').document(entry_id)
         doc = doc_ref.get()
         if doc.exists:
@@ -56,13 +51,13 @@ def calcular_tarifa_endpoint():
             if 'tarifa' in entrada and entrada['tarifa'] > 0:
                 return jsonify({'error': 'Tarifa ya calculada'}), 400
             hora_entrada = entrada['last_entry_time']
-            hora_actual = datetime.datetime.now(datetime.timezone.utc)  # Asegura que hora_actual sea aware
+            hora_actual = datetime.datetime.now(datetime.timezone.utc)
             duracion = hora_actual - hora_entrada
             minutos = duracion.total_seconds() / 60
             tarifa = calcular_tarifa(minutos)
             entrada['tarifa'] = tarifa
             entrada['time_spent'] = minutos
-            entrada['hora_salida'] = hora_actual.isoformat()  # Agrega la hora de salida
+            entrada['hora_salida'] = hora_actual.isoformat()
             doc_ref.update(entrada)
             return jsonify({'tarifa': tarifa, 'time_spent': minutos, 'success': True}), 200
         else:
@@ -73,6 +68,14 @@ def calcular_tarifa_endpoint():
 
 @app.route('/api/upload', methods=['POST'])
 def upload_image():
+    global last_request_time
+    current_time = time.time()
+    
+    if last_request_time and current_time - last_request_time < 3:
+        return jsonify({'error': 'Cooldown en efecto, intente nuevamente después de unos segundos'}), 429
+
+    last_request_time = current_time
+
     if 'image_name' not in request.files:
         return jsonify({'error': 'No file part'}), 400
     file = request.files['image_name']
@@ -80,20 +83,18 @@ def upload_image():
         return jsonify({'error': 'No selected file'}), 400
     if file:
         filename = secure_filename(file.filename)
-        path_save = os.path.join(UPLOAD_PATH, filename)
-        file.save(path_save)
+        image = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
 
         try:
-            public_url = upload_file_to_firebase(path_save)
+            text_list, result_url, plate_urls = object_detection(image, filename)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
-        text_list = object_detection(path_save, filename)
         texts_by_filename[filename] = text_list  
 
         if text_list:
             response_text = []
-            for plate_text in text_list:
+            for plate_text, plate_url in zip(text_list, plate_urls):
                 current_time = datetime.datetime.now(datetime.timezone.utc)
                 try:
                     doc_ref = db.collection('entries').where('placa', '==', plate_text).order_by('last_entry_time', direction=firestore.Query.DESCENDING).limit(1)
@@ -117,10 +118,11 @@ def upload_image():
                             'time_spent': 0,
                             'tarifa': 0,
                             'hora_salida': None,
-                            'firebase_url': public_url,
+                            'firebase_url': result_url,
                             'editado': False,
-                            'entrada_image_url': public_url,
-                            'salida_image_url': None
+                            'entrada_image_url': result_url,
+                            'salida_image_url': None,
+                            'plate_image_url': plate_url
                         })
                     else:
                         entrada_actual['count'] += 1
@@ -129,14 +131,15 @@ def upload_image():
                         entrada_actual['time_spent'] = time_difference
                         entrada_actual['tarifa'] = tarifa
                         entrada_actual['hora_salida'] = current_time.isoformat()
-                        entrada_actual['salida_image_url'] = public_url
+                        entrada_actual['salida_image_url'] = result_url
                         db.collection('entries').document(entry_id).update(entrada_actual)
                         response_text.append({
                             'id': entry_id,
                             'placa': plate_text,
                             'time_spent': time_difference,
                             'tarifa': tarifa,
-                            'firebase_url': public_url 
+                            'firebase_url': result_url,
+                            'plate_image_url': plate_url
                         })
                 else:
                     nueva_entrada_id = str(uuid.uuid4())
@@ -148,25 +151,27 @@ def upload_image():
                         'time_spent': 0,
                         'tarifa': 0,
                         'hora_salida': None,
-                        'firebase_url': public_url,
+                        'firebase_url': result_url,
                         'editado': False,
-                        'entrada_image_url': public_url,
-                        'salida_image_url': None
+                        'entrada_image_url': result_url,
+                        'salida_image_url': None,
+                        'plate_image_url': plate_url
                     })
 
             return jsonify({
                 'upload_image': filename,
                 'texts': text_list,
-                'firebase_url': public_url,
+                'firebase_url': result_url,
                 'detalles': response_text
             }), 200
         else:
             return jsonify({
                 'upload_image': filename,
                 'texts': text_list,
-                'firebase_url': public_url,
+                'firebase_url': result_url,
                 'error': 'No text detected'
             }), 400
+
 
 @app.route('/api/borrar-hora-salida', methods=['POST'])
 def borrar_hora_salida():
@@ -296,20 +301,29 @@ def obtener_entradas():
         hoy = datetime.datetime.now(datetime.timezone.utc)
         
         if filtro == 'dia':
-            inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
+            fecha = request.args.get('fecha', None)
+            if fecha:
+                inicio = datetime.datetime.fromisoformat(fecha).replace(hour=0, minute=0, second=0, microsecond=0)
+                fin = inicio + datetime.timedelta(days=1)
+            else:
+                inicio = hoy.replace(hour=0, minute=0, second=0, microsecond=0)
+                fin = inicio + datetime.timedelta(days=1)
         elif filtro == 'semana':
             inicio = hoy - datetime.timedelta(days=hoy.weekday())
             inicio = inicio.replace(hour=0, minute=0, second=0, microsecond=0)
+            fin = inicio + datetime.timedelta(days=7)
         elif filtro == 'mes':
             inicio = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            fin = (inicio + datetime.timedelta(days=32)).replace(day=1)
         else:
             try:
                 filtro_date = datetime.datetime.fromisoformat(filtro)
                 inicio = filtro_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                fin = inicio + datetime.timedelta(days=1)
             except ValueError:
                 return jsonify({'error': 'Filtro no válido'}), 400
 
-        docs = db.collection('entries').where('last_entry_time', '>=', inicio).stream()
+        docs = db.collection('entries').where('last_entry_time', '>=', inicio).where('last_entry_time', '<', fin).stream()
         lista_entradas = []
 
         for doc in docs:
@@ -332,6 +346,28 @@ def obtener_entradas():
         app.logger.error(f"Error al obtener las entradas: {e}", exc_info=True)
         return jsonify({'error': 'Error interno del servidor', 'message': str(e)}), 500
 
+@app.route('/api/total-ingresos-fecha', methods=['GET'])
+def total_ingresos_fecha():
+    try:
+        fecha = request.args.get('fecha')
+        if not fecha:
+            return jsonify({'error': 'Fecha no proporcionada'}), 400
+        
+        fecha_inicio = datetime.datetime.fromisoformat(fecha).replace(hour=0, minute=0, second=0, microsecond=0)
+        fecha_fin = fecha_inicio + datetime.timedelta(days=1)
+        
+        docs = db.collection('entries').where('last_entry_time', '>=', fecha_inicio).where('last_entry_time', '<', fecha_fin).stream()
+        total_ingresos = 0.0
+
+        for doc in docs:
+            entrada = doc.to_dict()
+            if 'tarifa' in entrada:
+                total_ingresos += entrada['tarifa']
+
+        return jsonify({'total_ingresos': total_ingresos}), 200
+    except Exception as e:
+        app.logger.error(f"Error al obtener el total de ingresos por fecha: {e}", exc_info=True)
+        return jsonify({'error': 'Error interno del servidor', 'message': str(e)}), 500
 
 @app.route('/api/ver-placa/<filename>', methods=['GET'])
 def ver_placa(filename):
@@ -340,10 +376,6 @@ def ver_placa(filename):
         return jsonify({'filename': filename, 'texts': text_list})
     else:
         return jsonify({'error': 'File not found or no text detected'}), 404
-
-@app.route('/api/images/<filename>', methods=['GET'])
-def get_image(filename):
-    return send_from_directory(PREDICT_PATH, filename)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():

@@ -3,39 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <title>Registro de Entrada de Vehículos</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script> <!-- Agregar flatpickr -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <script>
-        let filtroSeleccionado = 'dia'; // Valor predeterminado
+        let filtroSeleccionado = 'dia'; 
+        let mostrarSoloActivos = true;
 
+        function mostrarVehiculosRegistrados(activos = true) {
+            const fechaSeleccionada = document.getElementById('datepicker').value;
+            let url = `/api/obtener-entradas?filtro=${filtroSeleccionado}`;
+            if (filtroSeleccionado === 'dia' && fechaSeleccionada) {
+                url += `&fecha=${fechaSeleccionada}`;
+            }
 
-        function mostrarVehiculosRegistrados() {
-            fetch(`/api/obtener-entradas?filtro=${filtroSeleccionado}`)
+            fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     const listaVehiculos = document.getElementById('listaVehiculos');
                     listaVehiculos.innerHTML = '';
                     data.forEach(entrada => {
+                        if (activos && entrada.hora_salida) return;
+                        if (!activos && !entrada.hora_salida) return;
+
                         const card = document.createElement('div');
-                        card.className = 'card m-2'; // Añadir margen entre las cartas
+                        card.className = 'card m-2';
                         card.style.width = '18rem';
 
                         if (!entrada.hora_salida) {
-                            card.classList.add('card-gris'); // Añadir clase gris si no hay hora de salida
+                            card.classList.add('card-gris');
                         }
 
                         const imageContainer = document.createElement('div');
                         imageContainer.className = 'd-flex justify-content-between';
 
                         const entradaImage = document.createElement('img');
-                        entradaImage.src = entrada.entrada_image_url || 'placeholder.jpg'; // Placeholder si no hay imagen
+                        entradaImage.src = entrada.entrada_image_url || 'placeholder.jpg';
                         entradaImage.className = 'card-img-top';
                         entradaImage.alt = 'Imagen de Entrada';
                         entradaImage.style.height = '180px';
                         entradaImage.style.width = '49%';
 
                         const salidaImage = document.createElement('img');
-                        salidaImage.src = entrada.salida_image_url || 'placeholder.jpg'; // Placeholder si no hay imagen
+                        salidaImage.src = entrada.salida_image_url || 'placeholder.jpg';
                         salidaImage.className = 'card-img-top';
                         salidaImage.alt = 'Imagen de Salida';
                         salidaImage.style.height = '180px';
@@ -103,6 +114,12 @@
                 .catch(error => mostrarAlerta('Error al obtener las entradas: ' + error, 'danger'));
         }
 
+        function alternarVista() {
+            mostrarSoloActivos = !mostrarSoloActivos;
+            document.getElementById('textoBotonVista').textContent = mostrarSoloActivos ? 'Vehículos con Tarifa' : 'Vehículos Activos';
+            mostrarVehiculosRegistrados(mostrarSoloActivos);
+        }
+
         function buscarPlaca() {
             const inputSearch = document.querySelector('.form-control').value.toUpperCase();
 
@@ -124,13 +141,13 @@
             const inputPlacaOriginal = document.getElementById('placaOriginal');
             const inputNuevaPlaca = document.getElementById('nuevaPlaca');
             const imagenCarro = document.getElementById('imagenCarro');
-            const inputHoraEntrada = document.getElementById('horaEntrada');  // Nuevo campo oculto para la hora de entrada
+            const inputHoraEntrada = document.getElementById('horaEntrada');
 
             inputId.value = id;
             inputPlacaOriginal.value = placaOriginal;
             inputNuevaPlaca.value = '';
             imagenCarro.src = imageUrl;
-            inputHoraEntrada.value = horaEntrada;  // Asigna la hora de entrada
+            inputHoraEntrada.value = horaEntrada;
 
             const editarPlacaModal = new bootstrap.Modal(document.getElementById('editarPlacaModal'));
             editarPlacaModal.show();
@@ -147,7 +164,7 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    id: entryId,  // Asegúrate de que el ID se envíe aquí
+                    id: entryId,
                     placa_original: placaOriginal,
                     nueva_placa: nuevaPlaca
                 })
@@ -158,7 +175,7 @@
                 if (data.status === 'success') {
                     const editarPlacaModal = bootstrap.Modal.getInstance(document.getElementById('editarPlacaModal'));
                     editarPlacaModal.hide();
-                    mostrarVehiculosRegistrados();
+                    mostrarVehiculosRegistrados(mostrarSoloActivos);
                 }
             })
             .catch(error => mostrarAlerta('Error: ' + error, 'danger'));
@@ -171,7 +188,7 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    id: id,  // Asegúrate de que el ID se envíe aquí
+                    id: id,
                     placa: placa,
                     hora_entrada: horaEntrada
                 })
@@ -211,7 +228,13 @@
         }
 
         function actualizarTotalIngresos() {
-            fetch('/api/total-ingresos-dia')
+            const fechaSeleccionada = document.getElementById('datepicker').value;
+            let url = '/api/total-ingresos-dia';
+            if (filtroSeleccionado === 'dia' && fechaSeleccionada) {
+                url = `/api/total-ingresos-fecha?fecha=${fechaSeleccionada}`;
+            }
+
+            fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('totalIngresosDia').textContent = data.total_ingresos.toFixed(2);
@@ -224,13 +247,24 @@
             filtros.forEach(filtro => {
                 filtro.addEventListener('change', () => {
                     filtroSeleccionado = filtro.value;
-                    mostrarVehiculosRegistrados();
+                    mostrarVehiculosRegistrados(mostrarSoloActivos);
+                    actualizarTotalIngresos();
                 });
             });
 
+            flatpickr("#datepicker", {
+                enableTime: false,
+                dateFormat: "Y-m-d",
+                onChange: function(selectedDates, dateStr, instance) {
+                    mostrarVehiculosRegistrados(mostrarSoloActivos);
+                    actualizarTotalIngresos();
+                }
+            });
+
+            document.getElementById('textoBotonVista').textContent = 'Vehículos con Tarifa';
             mostrarVehiculosRegistrados();
             actualizarTotalIngresos();
-            setInterval(mostrarVehiculosRegistrados, 5000);
+            setInterval(() => mostrarVehiculosRegistrados(mostrarSoloActivos), 5000);
             setInterval(actualizarTotalIngresos, 5000);
         });
 
@@ -246,7 +280,6 @@
                 return;
             }
     
- 
             fetch('/api/crear-instancia', {
                 method: 'POST',
                 headers: {
@@ -262,7 +295,7 @@
                 if (data.status === 'success') {
                     const crearInstanciaModal = bootstrap.Modal.getInstance(document.getElementById('crearInstanciaModal'));
                     crearInstanciaModal.hide();
-                    mostrarVehiculosRegistrados();
+                    mostrarVehiculosRegistrados(mostrarSoloActivos);
                 }
             })
             .catch(error => mostrarAlerta('Error: ' + error, 'danger'));
@@ -282,7 +315,7 @@
             .then(data => {
                 mostrarAlerta(data.message, data.status === 'success' ? 'success' : 'danger');
                 if (data.status === 'success') {
-                    mostrarVehiculosRegistrados();
+                    mostrarVehiculosRegistrados(mostrarSoloActivos);
                 }
             })
             .catch(error => mostrarAlerta('Error: ' + error, 'danger'));
@@ -302,7 +335,7 @@
             .then(data => {
                 mostrarAlerta(data.message, data.status === 'success' ? 'success' : 'danger');
                 if (data.status === 'success') {
-                    mostrarVehiculosRegistrados();
+                    mostrarVehiculosRegistrados(mostrarSoloActivos);
                 }
             })
             .catch(error => mostrarAlerta('Error: ' + error, 'danger'));
@@ -356,6 +389,9 @@
     </div>
     <div class="text-center my-4">
         <button class="btn btn-primary" onclick="abrirModalCrearInstancia()">Crear Nueva Instancia</button>
+        <button class="btn btn-secondary" onclick="alternarVista()">
+            Mostrar <span id="textoBotonVista"></span>
+        </button>
     </div>
     
     <div class="modal fade" id="crearInstanciaModal" tabindex="-1" aria-labelledby="crearInstanciaModalLabel" aria-hidden="true">
@@ -386,6 +422,7 @@
             <input type="radio" class="btn-check" name="filtro" id="filtro-mes" value="mes">
             <label class="btn btn-outline-primary" for="filtro-mes">Mes</label>
         </div>
+        <input type="text" id="datepicker" class="form-control mt-2" placeholder="Seleccionar fecha específica">
     </div>
     <div id="alertPlaceholder"></div>
     <div class="d-flex flex-wrap mt-4" id="listaVehiculos">
@@ -401,8 +438,8 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <input type="hidden" id="entryId"> <!-- Campo oculto para el ID -->
-                    <input type="hidden" id="horaEntrada"> <!-- Campo oculto para la hora de entrada -->
+                    <input type="hidden" id="entryId">
+                    <input type="hidden" id="horaEntrada">
                     <input type="text" id="placaOriginal" class="form-control mb-2" readonly required>
                     <img id="imagenCarro" src="" class="img-fluid mb-3" alt="Imagen del Carro">
                     <input type="text" id="nuevaPlaca" class="form-control" placeholder="Nueva Placa" required>
