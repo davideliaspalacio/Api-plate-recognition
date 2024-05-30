@@ -9,11 +9,11 @@ from werkzeug.utils import secure_filename
 import firebase_admin
 from firebase_admin import credentials, storage, firestore
 import uuid
+# from deeplearning import object_detection
 from deeplearling import object_detection
 # from whatsapp_api_client_python import API
 import json
 import google.api_core.exceptions
-
 
 cred = credentials.Certificate('./ia-car-plates-firebase-adminsdk-61xhu-df58abe964.json')
 firebase_admin.initialize_app(cred, {
@@ -172,7 +172,6 @@ def upload_image():
                 'error': 'No text detected'
             }), 400
 
-
 @app.route('/api/borrar-hora-salida', methods=['POST'])
 def borrar_hora_salida():
     try:
@@ -215,7 +214,6 @@ def borrar_entrada():
     except Exception as e:
         app.logger.error(f"Error en borrar_entrada: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
-    
     
 @app.route('/api/crear-instancia', methods=['POST'])
 def crear_instancia():
@@ -292,7 +290,6 @@ def actualizar_placa():
     except Exception as e:
         app.logger.error(f"Error en actualizar_placa: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
 
 @app.route('/api/obtener-entradas', methods=['GET'])
 def obtener_entradas():
@@ -399,20 +396,9 @@ def finalizar(placa):
     else:
         return redirect(url_for('index'))
 
-# @app.route('/whatsapp/webhook', methods=['POST'])
-# def whatsapp_webhook():
-#     if request.method == 'POST':
-#         data = request.get_json()
-#         print("entro con " + json.dumps(data))
-#         procesar_mensaje(data)
-#         return jsonify({"status": "success"}), 200
-#     else:
-#         return jsonify({"status": "error"}), 400
-
 @app.route('/api/total-ingresos-dia', methods=['GET'])
 def total_ingresos_dia():
     try:
-        # Obtener todas las entradas desde Firestore
         docs = db.collection('entries').stream()
         total_ingresos = 0.0
         hoy = datetime.datetime.now(datetime.timezone.utc).date()
@@ -447,7 +433,6 @@ def obtener_ultima_placa():
         return jsonify(entrada_info)
     return jsonify({'error': 'No hay placas registradas'}), 404
 
-
 @app.route('/api/buscar-placa', methods=['GET'])
 def buscar_placa():
     try:
@@ -477,32 +462,6 @@ def buscar_placa():
     except Exception as e:
         app.logger.error(f"Error en buscar_placa: {e}", exc_info=True)
         return jsonify({'error': 'Error interno del servidor', 'message': str(e)}), 500
-
-
-# def procesar_mensaje(data):
-#     try:
-#         message_data = data['messageData']
-#         if message_data['typeMessage'] == 'textMessage':
-#             message = message_data['textMessageData']['textMessage']
-#             sender = data['senderData']['chatId']
-#         elif message_data['typeMessage'] == 'extendedTextMessage':
-#             message = message_data['extendedTextMessageData']['text']
-#             sender = data['senderData']['chatId']
-#         else:
-#             raise KeyError("Tipo de mensaje no soportado")
-
-#         whatsapp = API.GreenAPI('7103931186', 'deae7727f47b4592aff2780288b5b5e9c948008aa0594bcd90')
-
-#         if message.lower() == 'entrando parqueadero' or message.lower() == 'iniciar':
-#             ultima_placa_info = obtener_ultima_placa().get_json()  
-#             if 'error' not in ultima_placa_info:
-#                 mensaje_respuesta = f"*Muchas gracias por tu ingreso a nuestro parqueadero🚗*. Esta es tu placa: *{ultima_placa_info['placa']}*\nHora de Entrada: *{ultima_placa_info['hora_entrada']}*\nesta es la imgen de tu vehiculo 🚗: {ultima_placa_info['firebase_url']}\n"
-#                 whatsapp.sending.sendMessage(sender, mensaje_respuesta)
-#             else:
-#                 whatsapp.sending.sendMessage(sender, "Lo sentimos, no hay registros de placas recientes.")
-
-#     except KeyError as e:
-#         print(f"Error: {str(e)}")
 
 if __name__ == '__main__':
     app.run()
