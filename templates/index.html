@@ -10,6 +10,9 @@
     <script>
         let filtroSeleccionado = 'dia'; 
         let mostrarSoloActivos = true;
+        setTimeout(() => {
+                actualizarTotalIngresos();
+            }, 5000);
 
         function mostrarVehiculosRegistrados(activos = true) {
             const fechaSeleccionada = document.getElementById('datepicker').value;
@@ -224,7 +227,7 @@
             alertPlaceholder.appendChild(alertDiv);
             setTimeout(() => {
                 alertDiv.remove();
-            }, 5000);
+            }, 5000); 
         }
 
         function actualizarTotalIngresos() {
@@ -248,7 +251,6 @@
                 filtro.addEventListener('change', () => {
                     filtroSeleccionado = filtro.value;
                     mostrarVehiculosRegistrados(mostrarSoloActivos);
-                    actualizarTotalIngresos();
                 });
             });
 
@@ -264,8 +266,8 @@
             document.getElementById('textoBotonVista').textContent = 'Vehículos con Tarifa';
             mostrarVehiculosRegistrados();
             actualizarTotalIngresos();
-            setInterval(() => mostrarVehiculosRegistrados(mostrarSoloActivos), 5000);
-            setInterval(actualizarTotalIngresos, 5000);
+            //setInterval(() => mostrarVehiculosRegistrados(mostrarSoloActivos), 5000);
+            //setInterval(actualizarTotalIngresos, 5000);
         });
 
         function abrirModalCrearInstancia() {
