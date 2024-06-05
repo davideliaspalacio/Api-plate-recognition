@@ -14,6 +14,7 @@ from deeplearling import object_detection
 # from whatsapp_api_client_python import API
 import json
 import google.api_core.exceptions
+import difflib
 
 cred = credentials.Certificate('./ia-car-plates-firebase-adminsdk-61xhu-df58abe964.json')
 firebase_admin.initialize_app(cred, {
@@ -29,9 +30,20 @@ app.logger.setLevel(logging.DEBUG)
 texts_by_filename = {}
 entradas = {}
 last_request_time = None  
+last_detections = {}
 
 MAX_REPEAT_COUNT = 2
+COOLDOWN_DURATION = 3  
 
+def check_cooldown():
+    global last_request_time
+    current_time = time.time()
+
+    if last_request_time and current_time - last_request_time < COOLDOWN_DURATION:
+        return True, current_time
+    else:
+        last_request_time = current_time
+        return False, current_time
 def calcular_tarifa(minutos):
     tarifa_por_hora = 5500
     horas = minutos / 60
@@ -66,15 +78,18 @@ def calcular_tarifa_endpoint():
         app.logger.error(f"Error en calcular_tarifa_endpoint: {e}", exc_info=True)
         return jsonify({'error': 'Error interno del servidor', 'message': str(e)}), 500
 
+last_detections = {}
+
+SIMILARITY_THRESHOLD = 0.6  # Adjust the threshold as needed
+
+def similar(a, b):
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
 @app.route('/api/upload', methods=['POST'])
 def upload_image():
-    global last_request_time
-    current_time = time.time()
-    
-    if last_request_time and current_time - last_request_time < 3:
+    cooldown_active, current_time = check_cooldown()
+    if cooldown_active:
         return jsonify({'error': 'Cooldown en efecto, intente nuevamente después de unos segundos'}), 429
-
-    last_request_time = current_time
 
     if 'image_name' not in request.files:
         return jsonify({'error': 'No file part'}), 400
@@ -90,12 +105,28 @@ def upload_image():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
-        texts_by_filename[filename] = text_list  
+        texts_by_filename[filename] = text_list   
 
         if text_list:
             response_text = []
             for plate_text, plate_url in zip(text_list, plate_urls):
                 current_time = datetime.datetime.now(datetime.timezone.utc)
+                last_detection_time = last_detections.get(plate_text)
+
+                # Check if a similar plate has been detected recently
+                similar_detected = False
+                for detected_plate, detection_time in last_detections.items():
+                    if similar(plate_text, detected_plate) > SIMILARITY_THRESHOLD:
+                        if (current_time - detection_time).total_seconds() < 120:
+                            similar_detected = True
+                            app.logger.debug(f"Placa {plate_text} ignorada por ser similar a {detected_plate}.")
+                            break
+
+                if similar_detected:
+                    continue
+
+                last_detections[plate_text] = current_time
+
                 try:
                     doc_ref = db.collection('entries').where('placa', '==', plate_text).order_by('last_entry_time', direction=firestore.Query.DESCENDING).limit(1)
                     docs = doc_ref.stream()
@@ -106,8 +137,13 @@ def upload_image():
                 for doc in docs:
                     entrada_actual = doc.to_dict()
                     entry_id = doc.id
-                
+
                 if entrada_actual:
+                    time_difference = (current_time - entrada_actual['last_entry_time']).total_seconds() / 60.0
+                    if time_difference < 2:
+                        app.logger.debug(f"Placa {plate_text} ignorada por detección reciente.")
+                        continue  
+
                     if entrada_actual['count'] >= MAX_REPEAT_COUNT:
                         nueva_entrada_id = str(uuid.uuid4())
                         db.collection('entries').document(nueva_entrada_id).set({
@@ -126,7 +162,6 @@ def upload_image():
                         })
                     else:
                         entrada_actual['count'] += 1
-                        time_difference = (current_time - entrada_actual['last_entry_time']).total_seconds() / 60.0
                         tarifa = calcular_tarifa(time_difference)
                         entrada_actual['time_spent'] = time_difference
                         entrada_actual['tarifa'] = tarifa
