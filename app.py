@@ -83,14 +83,18 @@ last_detections = {}
 
 SIMILARITY_THRESHOLD = 0.6  # Ajustar el umbral según sea necesario
 
-def similar(a, b):
-    return difflib.SequenceMatcher(None, a, b).ratio()
+def are_plates_similar(plate1, plate2, threshold=0.8):
+    return plate1 == plate2  # Simplicidad: compara si son exactamente iguales. Mejora esto para similitud real.
 
 @app.route('/api/upload', methods=['POST'])
 def upload_image():
-    cooldown_active, current_time = check_cooldown()
-    if cooldown_active:
-        return jsonify({'error': 'Cooldown en efecto, intente nuevamente después de unos segundos.'}), 429
+    global last_request_time, last_plate_entry_time
+
+    # Control de tiempo para la solicitud de subida
+    current_time = time.time()
+    if last_request_time and current_time - last_request_time < 3:
+        return jsonify({'error': 'Cooldown en efecto, intente nuevamente después de unos segundos'}), 429
+    last_request_time = current_time
 
     if 'image_name' not in request.files:
         return jsonify({'error': 'No file part'}), 400
@@ -106,27 +110,26 @@ def upload_image():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
-        texts_by_filename[filename] = text_list   
+        texts_by_filename[filename] = text_list  
 
         if text_list:
             response_text = []
+            current_time_dt = datetime.datetime.now(datetime.timezone.utc)
             for plate_text, plate_url in zip(text_list, plate_urls):
-                current_time = datetime.datetime.now(datetime.timezone.utc)
-                last_detection_time = last_detections.get(plate_text)
-
-                # Check if a similar plate has been detected recently
-                similar_detected = False
-                for detected_plate, detection_time in last_detections.items():
-                    if similar(plate_text, detected_plate) > SIMILARITY_THRESHOLD:
-                        if (current_time - detection_time).total_seconds() < 120:
-                            similar_detected = True
-                            app.logger.debug(f"Placa {plate_text} ignorada por ser similar a {detected_plate}.")
+                # Verificar el tiempo de la última entrada por placa y similitud
+                ignore_plate = False
+                for existing_plate, last_entry_time in last_plate_entry_time.items():
+                    time_diff = current_time - last_entry_time
+                    if time_diff < 120:  # 2 minutos en segundos
+                        if plate_text == existing_plate or are_plates_similar(plate_text, existing_plate):
+                            ignore_plate = True
                             break
 
-                if similar_detected:
-                    continue
+                if ignore_plate:
+                    continue  # Ignorar la placa si se encontró una similar en los últimos 2 minutos
 
-                last_detections[plate_text] = current_time
+                # Actualizar el tiempo de la última entrada por placa
+                last_plate_entry_time[plate_text] = current_time
 
                 try:
                     doc_ref = db.collection('entries').where('placa', '==', plate_text).order_by('last_entry_time', direction=firestore.Query.DESCENDING).limit(1)
@@ -138,20 +141,15 @@ def upload_image():
                 for doc in docs:
                     entrada_actual = doc.to_dict()
                     entry_id = doc.id
-
+                
                 if entrada_actual:
-                    time_difference = (current_time - entrada_actual['last_entry_time']).total_seconds() / 60.0
-                    if time_difference < 2:
-                        app.logger.debug(f"Placa {plate_text} ignorada por detección reciente.")
-                        continue  
-
                     if entrada_actual['count'] >= MAX_REPEAT_COUNT:
                         nueva_entrada_id = str(uuid.uuid4())
                         db.collection('entries').document(nueva_entrada_id).set({
                             'id': nueva_entrada_id,
                             'placa': plate_text,
                             'count': 1,
-                            'last_entry_time': current_time,
+                            'last_entry_time': current_time_dt,
                             'time_spent': 0,
                             'tarifa': 0,
                             'hora_salida': None,
@@ -163,13 +161,18 @@ def upload_image():
                         })
                     else:
                         entrada_actual['count'] += 1
-                        entrada_actual['last_entry_time'] = current_time
-                        entrada_actual['entrada_image_url'] = result_url
-                        entrada_actual['plate_image_url'] = plate_url
+                        time_difference = (current_time_dt - entrada_actual['last_entry_time']).total_seconds() / 60.0
+                        tarifa = calcular_tarifa(time_difference)
+                        entrada_actual['time_spent'] = time_difference
+                        entrada_actual['tarifa'] = tarifa
+                        entrada_actual['hora_salida'] = current_time_dt.isoformat()
+                        entrada_actual['salida_image_url'] = result_url
                         db.collection('entries').document(entry_id).update(entrada_actual)
                         response_text.append({
                             'id': entry_id,
                             'placa': plate_text,
+                            'time_spent': time_difference,
+                            'tarifa': tarifa,
                             'firebase_url': result_url,
                             'plate_image_url': plate_url
                         })
@@ -179,7 +182,7 @@ def upload_image():
                         'id': nueva_entrada_id,
                         'placa': plate_text,
                         'count': 1,
-                        'last_entry_time': current_time,
+                        'last_entry_time': current_time_dt,
                         'time_spent': 0,
                         'tarifa': 0,
                         'hora_salida': None,
@@ -203,6 +206,9 @@ def upload_image():
                 'firebase_url': result_url,
                 'error': 'No text detected'
             }), 400
+
+# Inicializar el diccionario de tiempos de la última entrada por placa
+last_plate_entry_time = {}
 
 @app.route('/api/borrar-hora-salida', methods=['POST'])
 def borrar_hora_salida():
