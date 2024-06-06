@@ -44,6 +44,7 @@ def check_cooldown():
     else:
         last_request_time = current_time
         return False, current_time
+
 def calcular_tarifa(minutos):
     tarifa_por_hora = 5500
     horas = minutos / 60
@@ -80,7 +81,7 @@ def calcular_tarifa_endpoint():
 
 last_detections = {}
 
-SIMILARITY_THRESHOLD = 0.6  # Adjust the threshold as needed
+SIMILARITY_THRESHOLD = 0.6  # Ajustar el umbral según sea necesario
 
 def similar(a, b):
     return difflib.SequenceMatcher(None, a, b).ratio()
@@ -162,17 +163,13 @@ def upload_image():
                         })
                     else:
                         entrada_actual['count'] += 1
-                        tarifa = calcular_tarifa(time_difference)
-                        entrada_actual['time_spent'] = time_difference
-                        entrada_actual['tarifa'] = tarifa
-                        entrada_actual['hora_salida'] = current_time.isoformat()
-                        entrada_actual['salida_image_url'] = result_url
+                        entrada_actual['last_entry_time'] = current_time
+                        entrada_actual['entrada_image_url'] = result_url
+                        entrada_actual['plate_image_url'] = plate_url
                         db.collection('entries').document(entry_id).update(entrada_actual)
                         response_text.append({
                             'id': entry_id,
                             'placa': plate_text,
-                            'time_spent': time_difference,
-                            'tarifa': tarifa,
                             'firebase_url': result_url,
                             'plate_image_url': plate_url
                         })
