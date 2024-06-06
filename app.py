@@ -90,7 +90,7 @@ def similar(a, b):
 def upload_image():
     cooldown_active, current_time = check_cooldown()
     if cooldown_active:
-        return jsonify({'error': 'Cooldown en efecto, intente nuevamente después de unos segundos'}), 429
+        return jsonify({'error': 'Cooldown en efecto, intente nuevamente después de unos segundos.'}), 429
 
     if 'image_name' not in request.files:
         return jsonify({'error': 'No file part'}), 400
