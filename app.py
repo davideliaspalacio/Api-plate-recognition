@@ -358,7 +358,12 @@ def obtener_entradas():
             except ValueError:
                 return jsonify({'error': 'Filtro no válido'}), 400
 
-        docs = db.collection('entries').where('last_entry_time', '>=', inicio).where('last_entry_time', '<', fin).stream()
+        docs = db.collection('entries').where(
+            'last_entry_time', '>=', inicio
+        ).where(
+            'last_entry_time', '<', fin
+        ).stream()
+        
         lista_entradas = []
 
         for doc in docs:
@@ -391,7 +396,12 @@ def total_ingresos_fecha():
         fecha_inicio = datetime.datetime.fromisoformat(fecha).replace(hour=0, minute=0, second=0, microsecond=0)
         fecha_fin = fecha_inicio + datetime.timedelta(days=1)
         
-        docs = db.collection('entries').where('last_entry_time', '>=', fecha_inicio).where('last_entry_time', '<', fecha_fin).stream()
+        docs = db.collection('entries').where(
+            'last_entry_time', '>=', fecha_inicio
+        ).where(
+            'last_entry_time', '<', fecha_fin
+        ).stream()
+        
         total_ingresos = 0.0
 
         for doc in docs:
@@ -403,6 +413,7 @@ def total_ingresos_fecha():
     except Exception as e:
         app.logger.error(f"Error al obtener el total de ingresos por fecha: {e}", exc_info=True)
         return jsonify({'error': 'Error interno del servidor', 'message': str(e)}), 500
+
 
 @app.route('/api/ver-placa/<filename>', methods=['GET'])
 def ver_placa(filename):
@@ -478,7 +489,10 @@ def buscar_placa():
         if not placa:
             return jsonify({'error': 'Placa no proporcionada'}), 400
 
-        docs = db.collection('entries').where('placa', '==', placa).stream()
+        docs = db.collection('entries').where(
+            'placa', '==', placa
+        ).stream()
+        
         resultados = []
         for doc in docs:
             entrada = doc.to_dict()
@@ -500,6 +514,8 @@ def buscar_placa():
     except Exception as e:
         app.logger.error(f"Error en buscar_placa: {e}", exc_info=True)
         return jsonify({'error': 'Error interno del servidor', 'message': str(e)}), 500
+
+
 
 if __name__ == '__main__':
     app.run()
