@@ -90,6 +90,7 @@ def are_plates_similar(plate1, plate2, threshold=0.8):
 def upload_image():
     global last_request_time, last_plate_entry_time
 
+    # Control de tiempo para la solicitud de subida
     current_time = time.time()
     if last_request_time and current_time - last_request_time < 3:
         return jsonify({'error': 'Cooldown en efecto, intente nuevamente después de unos segundos'}), 429
@@ -111,30 +112,11 @@ def upload_image():
 
         texts_by_filename[filename] = text_list  
 
-        response_text = []
-        current_time_dt = datetime.datetime.now(datetime.timezone.utc)
-
-        if not text_list:
-            # No plates detected, save the entry with a placeholder plate
-            plate_text = "SIN_PLACA"
-            plate_url = None  # Or some default URL
-            nueva_entrada_id = str(uuid.uuid4())
-            db.collection('entries').document(nueva_entrada_id).set({
-                'id': nueva_entrada_id,
-                'placa': plate_text,
-                'count': 1,
-                'last_entry_time': current_time_dt,
-                'time_spent': 0,
-                'tarifa': 0,
-                'hora_salida': None,
-                'firebase_url': result_url,
-                'editado': False,
-                'entrada_image_url': result_url,
-                'salida_image_url': None,
-                'plate_image_url': plate_url
-            })
-        else:
+        if text_list:
+            response_text = []
+            current_time_dt = datetime.datetime.now(datetime.timezone.utc)
             for plate_text, plate_url in zip(text_list, plate_urls):
+                # Verificar el tiempo de la última entrada por placa y similitud
                 ignore_plate = False
                 for existing_plate, last_entry_time in last_plate_entry_time.items():
                     time_diff = current_time - last_entry_time
@@ -144,8 +126,9 @@ def upload_image():
                             break
 
                 if ignore_plate:
-                    continue
+                    continue  # Ignorar la placa si se encontró una similar en los últimos 2 minutos
 
+                # Actualizar el tiempo de la última entrada por placa
                 last_plate_entry_time[plate_text] = current_time
 
                 try:
@@ -210,12 +193,19 @@ def upload_image():
                         'plate_image_url': plate_url
                     })
 
-        return jsonify({
-            'upload_image': filename,
-            'texts': text_list,
-            'firebase_url': result_url,
-            'detalles': response_text
-        }), 200
+            return jsonify({
+                'upload_image': filename,
+                'texts': text_list,
+                'firebase_url': result_url,
+                'detalles': response_text
+            }), 200
+        else:
+            return jsonify({
+                'upload_image': filename,
+                'texts': text_list,
+                'firebase_url': result_url,
+                'error': 'No text detected'
+            }), 400
 
 # Inicializar el diccionario de tiempos de la última entrada por placa
 last_plate_entry_time = {}
