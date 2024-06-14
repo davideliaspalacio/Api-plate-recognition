@@ -33,7 +33,7 @@ last_request_time = None
 last_detections = {}
 
 MAX_REPEAT_COUNT = 2
-COOLDOWN_DURATION = 4 
+COOLDOWN_DURATION = 3 
 
 def check_cooldown():
     global last_request_time
