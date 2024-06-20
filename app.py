@@ -200,40 +200,12 @@ def upload_image():
                 'detalles': response_text
             }), 200
         else:
-            # Manejar caso de vehículos sin placa
-            nueva_entrada_id = str(uuid.uuid4())
-            current_time_dt = datetime.datetime.now(datetime.timezone.utc)
-            no_plate_text = "NO_PLATE"
-            plate_url = None  # No hay imagen de la placa porque no se detectó ninguna
-
-            db.collection('entries').document(nueva_entrada_id).set({
-                'id': nueva_entrada_id,
-                'placa': no_plate_text,
-                'count': 1,
-                'last_entry_time': current_time_dt,
-                'time_spent': 0,
-                'tarifa': 0,
-                'hora_salida': None,
-                'firebase_url': result_url,
-                'editado': False,
-                'entrada_image_url': result_url,
-                'salida_image_url': None,
-                'plate_image_url': plate_url
-            })
-
             return jsonify({
                 'upload_image': filename,
-                'texts': ["NO_PLATE"],
+                'texts': text_list,
                 'firebase_url': result_url,
-                'detalles': [{
-                    'id': nueva_entrada_id,
-                    'placa': no_plate_text,
-                    'time_spent': 0,
-                    'tarifa': 0,
-                    'firebase_url': result_url,
-                    'plate_image_url': plate_url
-                }]
-            }), 200
+                'error': 'No text detected'
+            }), 400
 
 # Inicializar el diccionario de tiempos de la última entrada por placa
 last_plate_entry_time = {}
